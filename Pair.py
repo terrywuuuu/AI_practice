@@ -1,6 +1,9 @@
 from sentence_transformers import SentenceTransformer, util
 import jieba
 import jieba.analyse
+from transformers import AutoTokenizer, AutoModel
+import torch
+from sklearn.metrics.pairwise import cosine_similarity
 
 # model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 # sentences = ["我喜歡安靜的女生", "我討厭吵鬧的女生"]
@@ -13,6 +16,10 @@ import jieba.analyse
 # 載入原始模型
 base_model_name = "paraphrase-multilingual-MiniLM-L12-v2"
 base_model = SentenceTransformer(base_model_name)
+
+# 載入bge-m3模型的 tokenizer 和 model（BERT-based）
+tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-cased")
+model = AutoModel.from_pretrained("bert-base-multilingual-cased")
 
 # 載入訓練好的模型
 finetuned_model_path = "finetuned-sbert-love"
@@ -31,6 +38,14 @@ pairs = [
 def extract_keywords(text, topK=3):
     keywords = jieba.analyse.extract_tags(text, topK=topK)
     return keywords
+
+# 計算語句嵌入
+def get_embeddings(text):
+    inputs = tokenizer(text, return_tensors='pt', padding=True, truncation=True)
+    with torch.no_grad():
+        outputs = model(**inputs)
+    embeddings = outputs.last_hidden_state.mean(dim=1)  # 使用平均池化來獲得句子的嵌入
+    return embeddings
 
 # 計算相似度（原始模型）
 print("=== 原始模型分數 ===")
@@ -60,3 +75,11 @@ for s1, s2 in pairs:
     emb2 = finetuned_model.encode(kw2, convert_to_tensor=True)
     score = util.cos_sim(emb1, emb2).item()
     print(f"{s1}  vs  {s2} → {score:.3f} (關鍵字: {kw1} vs {kw2})")
+
+# BGE-M3 模型分數
+print("\n=== BGE-M3 模型分數 ===")
+for s1, s2 in pairs:
+    emb1 = get_embeddings(s1)
+    emb2 = get_embeddings(s2)
+    score = cosine_similarity(emb1.numpy(), emb2.numpy())[0][0]
+    print(f"{s1}  vs  {s2} → {score:.3f}")
